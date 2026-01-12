@@ -1,0 +1,463 @@
+import { useState, useEffect } from 'react';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Card } from './ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { ScrollArea } from './ui/scroll-area';
+import { 
+  Folder, 
+  File, 
+  Users, 
+  ExternalLink, 
+  Settings,
+  Loader2,
+  Eye,
+  Clock,
+  Search
+} from 'lucide-react';
+
+interface FigmaFile {
+  key: string;
+  name: string;
+  thumbnail_url: string;
+  last_modified: string;
+}
+
+interface FigmaProject {
+  id: string;
+  name: string;
+}
+
+interface FigmaTeam {
+  id: string;
+  name: string;
+}
+
+export function FigmaAccountViewer() {
+  const [token, setToken] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [teams, setTeams] = useState<FigmaTeam[]>([]);
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [projects, setProjects] = useState<FigmaProject[]>([]);
+  const [files, setFiles] = useState<FigmaFile[]>([]);
+  const [recentFiles, setRecentFiles] = useState<FigmaFile[]>([]);
+  const [selectedFile, setSelectedFile] = useState<FigmaFile | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [userInfo, setUserInfo] = useState<any>(null);
+
+  useEffect(() => {
+    const savedToken = localStorage.getItem('figma_token');
+    if (savedToken) {
+      setToken(savedToken);
+      authenticateWithToken(savedToken);
+    }
+  }, []);
+
+  async function authenticateWithToken(tokenToUse: string) {
+    setLoading(true);
+    try {
+      // Verifica il token ottenendo le info dell'utente
+      const userResponse = await fetch('https://api.figma.com/v1/me', {
+        headers: {
+          'X-Figma-Token': tokenToUse
+        }
+      });
+
+      if (!userResponse.ok) {
+        throw new Error('Token non valido');
+      }
+
+      const userData = await userResponse.json();
+      setUserInfo(userData);
+      setIsAuthenticated(true);
+      localStorage.setItem('figma_token', tokenToUse);
+
+      // Carica i team
+      await loadTeams(tokenToUse);
+      
+      // Carica i file recenti
+      await loadRecentFiles(tokenToUse);
+    } catch (error) {
+      console.error('Errore autenticazione:', error);
+      alert('Errore: Token non valido. Verifica che sia corretto.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadTeams(tokenToUse: string) {
+    try {
+      const response = await fetch('https://api.figma.com/v1/me', {
+        headers: {
+          'X-Figma-Token': tokenToUse
+        }
+      });
+      const data = await response.json();
+      
+      if (data.team_ids) {
+        // Carica i dettagli di ogni team
+        const teamsData: FigmaTeam[] = [];
+        for (const teamId of data.team_ids) {
+          const teamResponse = await fetch(`https://api.figma.com/v1/teams/${teamId}/projects`, {
+            headers: {
+              'X-Figma-Token': tokenToUse
+            }
+          });
+          const teamData = await teamResponse.json();
+          teamsData.push({
+            id: teamId,
+            name: teamData.name || `Team ${teamId}`
+          });
+        }
+        setTeams(teamsData);
+        
+        // Seleziona il primo team
+        if (teamsData.length > 0) {
+          setSelectedTeam(teamsData[0].id);
+          await loadProjects(teamsData[0].id, tokenToUse);
+        }
+      }
+    } catch (error) {
+      console.error('Errore caricamento team:', error);
+    }
+  }
+
+  async function loadProjects(teamId: string, tokenToUse?: string) {
+    const currentToken = tokenToUse || token;
+    try {
+      const response = await fetch(`https://api.figma.com/v1/teams/${teamId}/projects`, {
+        headers: {
+          'X-Figma-Token': currentToken
+        }
+      });
+      const data = await response.json();
+      setProjects(data.projects || []);
+      
+      // Carica i file del primo progetto
+      if (data.projects && data.projects.length > 0) {
+        await loadProjectFiles(data.projects[0].id, currentToken);
+      }
+    } catch (error) {
+      console.error('Errore caricamento progetti:', error);
+    }
+  }
+
+  async function loadProjectFiles(projectId: string, tokenToUse?: string) {
+    const currentToken = tokenToUse || token;
+    try {
+      const response = await fetch(`https://api.figma.com/v1/projects/${projectId}/files`, {
+        headers: {
+          'X-Figma-Token': currentToken
+        }
+      });
+      const data = await response.json();
+      setFiles(data.files || []);
+    } catch (error) {
+      console.error('Errore caricamento file:', error);
+    }
+  }
+
+  async function loadRecentFiles(tokenToUse?: string) {
+    const currentToken = tokenToUse || token;
+    try {
+      const response = await fetch('https://api.figma.com/v1/me', {
+        headers: {
+          'X-Figma-Token': currentToken
+        }
+      });
+      const data = await response.json();
+      
+      // L'API non fornisce direttamente i file recenti, quindi usiamo i file dei progetti
+      setRecentFiles([]);
+    } catch (error) {
+      console.error('Errore caricamento file recenti:', error);
+    }
+  }
+
+  function handleAuthenticate() {
+    if (token.trim()) {
+      authenticateWithToken(token.trim());
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('figma_token');
+    setIsAuthenticated(false);
+    setToken('');
+    setTeams([]);
+    setProjects([]);
+    setFiles([]);
+    setSelectedFile(null);
+  }
+
+  function openFile(file: FigmaFile) {
+    setSelectedFile(file);
+  }
+
+  function closeFileViewer() {
+    setSelectedFile(null);
+  }
+
+  const filteredFiles = files.filter(file => 
+    file.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (!isAuthenticated) {
+    return (
+      <div className="size-full flex items-center justify-center bg-[#0d1117]">
+        <Card className="w-full max-w-md p-8 bg-[#161b22] border-gray-700">
+          <div className="text-center mb-6">
+            <svg className="size-16 mx-auto mb-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <h1 className="text-2xl text-white mb-2">Accedi al tuo Account Figma</h1>
+            <p className="text-gray-400 text-sm">Inserisci il tuo Personal Access Token</p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <Input
+                type="password"
+                placeholder="figd_..."
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleAuthenticate()}
+                className="bg-[#0d1117] border-gray-600 text-white placeholder:text-gray-500"
+              />
+            </div>
+
+            <Button 
+              onClick={handleAuthenticate}
+              disabled={!token.trim() || loading}
+              className="w-full bg-[#238636] hover:bg-[#2ea043] text-white"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  Connessione...
+                </>
+              ) : (
+                'Accedi'
+              )}
+            </Button>
+
+            <div className="mt-6 p-4 bg-[#0d1117] rounded border border-gray-700">
+              <p className="text-xs text-gray-400 mb-2"><strong className="text-gray-300">Come ottenere il token:</strong></p>
+              <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
+                <li>Vai su Figma → Settings → Account</li>
+                <li>Scorri fino a "Personal access tokens"</li>
+                <li>Clicca su "Generate new token"</li>
+                <li>Copia il token e incollalo qui</li>
+              </ol>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (selectedFile) {
+    const embedUrl = `https://www.figma.com/embed?embed_host=share&url=https://www.figma.com/file/${selectedFile.key}/${selectedFile.name}`;
+    
+    return (
+      <div className="size-full flex flex-col bg-[#0d1117]">
+        <div className="bg-[#161b22] border-b border-gray-700 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              onClick={closeFileViewer}
+              className="text-gray-300 hover:text-white hover:bg-gray-700"
+            >
+              ← Indietro
+            </Button>
+            <File className="size-5 text-gray-400" />
+            <h2 className="text-white font-medium">{selectedFile.name}</h2>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => window.open(`https://www.figma.com/file/${selectedFile.key}`, '_blank')}
+            className="text-gray-300 hover:text-white hover:bg-gray-700"
+            title="Apri in Figma"
+          >
+            <ExternalLink className="size-5" />
+          </Button>
+        </div>
+        <iframe
+          src={embedUrl}
+          className="flex-1 border-0"
+          allowFullScreen
+          title={selectedFile.name}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="size-full flex flex-col bg-[#0d1117]">
+      {/* Header */}
+      <div className="bg-[#161b22] border-b border-gray-700 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <svg className="size-8 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <div>
+              <h1 className="text-xl text-white font-semibold">Il mio Account Figma</h1>
+              {userInfo && (
+                <p className="text-sm text-gray-400">{userInfo.email}</p>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            onClick={handleLogout}
+            className="text-gray-300 hover:text-white hover:bg-gray-700"
+          >
+            <Settings className="size-4 mr-2" />
+            Logout
+          </Button>
+        </div>
+      </div>
+
+      {/* Contenuto principale */}
+      <div className="flex-1 overflow-hidden">
+        <Tabs defaultValue="files" className="size-full flex flex-col">
+          <div className="bg-[#161b22] border-b border-gray-700 px-4">
+            <TabsList className="bg-transparent">
+              <TabsTrigger value="files" className="data-[state=active]:bg-[#0d1117]">
+                <File className="size-4 mr-2" />
+                File
+              </TabsTrigger>
+              <TabsTrigger value="projects" className="data-[state=active]:bg-[#0d1117]">
+                <Folder className="size-4 mr-2" />
+                Progetti
+              </TabsTrigger>
+              <TabsTrigger value="teams" className="data-[state=active]:bg-[#0d1117]">
+                <Users className="size-4 mr-2" />
+                Team
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="files" className="flex-1 m-0 p-6">
+            <div className="mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
+                <Input
+                  placeholder="Cerca file..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 bg-[#0d1117] border-gray-700 text-white placeholder:text-gray-500"
+                />
+              </div>
+            </div>
+
+            <ScrollArea className="h-[calc(100vh-240px)]">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredFiles.map((file) => (
+                  <Card
+                    key={file.key}
+                    className="bg-[#161b22] border-gray-700 hover:border-gray-600 cursor-pointer transition-all group"
+                    onClick={() => openFile(file)}
+                  >
+                    <div className="aspect-video bg-[#0d1117] rounded-t overflow-hidden relative">
+                      {file.thumbnail_url ? (
+                        <img 
+                          src={file.thumbnail_url} 
+                          alt={file.name}
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        <div className="size-full flex items-center justify-center">
+                          <File className="size-12 text-gray-600" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Eye className="size-8 text-white" />
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <h3 className="text-white font-medium truncate mb-2">{file.name}</h3>
+                      <div className="flex items-center text-xs text-gray-400">
+                        <Clock className="size-3 mr-1" />
+                        {new Date(file.last_modified).toLocaleDateString('it-IT')}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {filteredFiles.length === 0 && (
+                <div className="text-center py-12 text-gray-500">
+                  <File className="size-16 mx-auto mb-4 opacity-50" />
+                  <p>Nessun file trovato</p>
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="projects" className="flex-1 m-0 p-6">
+            <ScrollArea className="h-[calc(100vh-200px)]">
+              <div className="space-y-4">
+                {projects.map((project) => (
+                  <Card
+                    key={project.id}
+                    className="bg-[#161b22] border-gray-700 p-4 hover:border-gray-600 cursor-pointer transition-all"
+                    onClick={() => loadProjectFiles(project.id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Folder className="size-6 text-blue-400" />
+                      <h3 className="text-white font-medium">{project.name}</h3>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {projects.length === 0 && (
+                <div className="text-center py-12 text-gray-500">
+                  <Folder className="size-16 mx-auto mb-4 opacity-50" />
+                  <p>Nessun progetto trovato</p>
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="teams" className="flex-1 m-0 p-6">
+            <ScrollArea className="h-[calc(100vh-200px)]">
+              <div className="space-y-4">
+                {teams.map((team) => (
+                  <Card
+                    key={team.id}
+                    className={`bg-[#161b22] border-gray-700 p-4 hover:border-gray-600 cursor-pointer transition-all ${
+                      selectedTeam === team.id ? 'border-blue-500' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedTeam(team.id);
+                      loadProjects(team.id);
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Users className="size-6 text-purple-400" />
+                      <h3 className="text-white font-medium">{team.name}</h3>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {teams.length === 0 && (
+                <div className="text-center py-12 text-gray-500">
+                  <Users className="size-16 mx-auto mb-4 opacity-50" />
+                  <p>Nessun team trovato</p>
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}

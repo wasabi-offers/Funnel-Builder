@@ -1,37 +1,11 @@
-# Unified Workspace
 
-Un workspace unificato per gestire Figma, Replit e GitHub da un'unica interfaccia.
+  # GitHub Integration
 
-## Features
+  This is a code bundle for GitHub Integration. The original project is available at https://www.figma.com/design/wFZjyoGdyzh6VxFvz1K1G0/GitHub-Integration.
 
-- 🎨 **Figma Integration**: Visualizza e gestisci design, componenti e export
-- 💻 **Replit Integration**: Controlla il tuo Repl, esegui comandi, vedi logs
-- 🔧 **GitHub Integration**: Gestisci repository, branch, commit e PR
-- ⚡ **Terminal Integrato**: Esegui comandi git, npm, build direttamente dall'interfaccia
-- 🚀 **Quick Commands**: Comandi rapidi per workflow comuni
+  ## Running the code
 
-## Setup
+  Run `npm i` to install the dependencies.
 
-1. Copia `.env.example` in `.env` e inserisci i tuoi token
-2. Installa le dipendenze: `npm install`
-3. Avvia il progetto: `npm run dev`
-
-## Come ottenere i token
-
-### Figma Token
-1. Vai su https://www.figma.com/settings
-2. Scroll down to "Personal access tokens"
-3. Genera un nuovo token
-
-### Replit Token
-1. Vai su https://replit.com/account
-2. Sezione "API"
-3. Genera un nuovo token
-
-### GitHub Token
-1. Vai su https://github.com/settings/tokens
-2. Genera un nuovo token (classic) con permessi repo
-
-## Utilizzo
-
-Accedi a `http://localhost:5173` per l'interfaccia web.
+  Run `npm run dev` to start the development server.
+  
