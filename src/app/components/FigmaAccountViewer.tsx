@@ -34,6 +34,8 @@ interface FigmaTeam {
 }
 
 export function FigmaAccountViewer() {
+  console.log('=== FIGMA ACCOUNT VIEWER LOADED - VERSION 2.0 ===');
+
   const [token, setToken] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
