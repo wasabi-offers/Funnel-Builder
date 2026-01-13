@@ -90,6 +90,8 @@ export function FigmaAccountViewer() {
     try {
       const allFiles: FigmaFile[] = [];
 
+      console.log('Caricamento file da', teams.length, 'team...');
+
       // Carica file da tutti i team
       for (const team of teams) {
         const projectsResponse = await fetch(`https://api.figma.com/v1/teams/${team.id}/projects`, {
@@ -98,6 +100,8 @@ export function FigmaAccountViewer() {
           }
         });
         const projectsData = await projectsResponse.json();
+
+        console.log(`Team ${team.name}:`, projectsData.projects?.length || 0, 'progetti');
 
         if (projectsData.projects) {
           // Per ogni progetto, carica i file
@@ -108,6 +112,7 @@ export function FigmaAccountViewer() {
               }
             });
             const filesData = await filesResponse.json();
+            console.log(`Progetto ${project.name}:`, filesData.files?.length || 0, 'file');
             if (filesData.files) {
               allFiles.push(...filesData.files);
             }
@@ -115,6 +120,7 @@ export function FigmaAccountViewer() {
         }
       }
 
+      console.log('Totale file caricati da team:', allFiles.length);
       setFiles(allFiles);
     } catch (error) {
       console.error('Errore caricamento tutti i file:', error);
@@ -199,15 +205,34 @@ export function FigmaAccountViewer() {
   async function loadRecentFiles(tokenToUse?: string) {
     const currentToken = tokenToUse || token;
     try {
+      // Usa l'endpoint per ottenere i file recenti dell'utente
       const response = await fetch('https://api.figma.com/v1/me', {
         headers: {
           'X-Figma-Token': currentToken
         }
       });
       const data = await response.json();
-      
-      // L'API non fornisce direttamente i file recenti, quindi usiamo i file dei progetti
-      setRecentFiles([]);
+
+      console.log('User data:', data);
+
+      // Carica i file recenti se disponibili
+      if (data.recent_files) {
+        const recentFilesData: FigmaFile[] = data.recent_files.map((file: any) => ({
+          key: file.key,
+          name: file.name,
+          thumbnail_url: file.thumbnail_url || '',
+          last_modified: file.last_modified || new Date().toISOString()
+        }));
+        setRecentFiles(recentFilesData);
+
+        // Se non ci sono file dai progetti, usa i file recenti
+        setFiles((prevFiles) => {
+          if (prevFiles.length === 0) {
+            return recentFilesData;
+          }
+          return prevFiles;
+        });
+      }
     } catch (error) {
       console.error('Errore caricamento file recenti:', error);
     }
