@@ -45,6 +45,7 @@ export function FigmaAccountViewer() {
   const [selectedFile, setSelectedFile] = useState<FigmaFile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [userInfo, setUserInfo] = useState<any>(null);
+  const [fileUrl, setFileUrl] = useState('');
 
   useEffect(() => {
     const savedToken = localStorage.getItem('figma_token');
@@ -86,9 +87,37 @@ export function FigmaAccountViewer() {
     }
   }
 
+  async function loadUserFiles(tokenToUse: string) {
+    try {
+      console.log('Tentativo di caricare file per account personale...');
+
+      // Prova a ottenere i file dall'utente
+      // L'API Figma non ha un endpoint diretto per "tutti i file dell'utente"
+      // Dobbiamo chiedere all'utente di inserire manualmente gli URL o usare la ricerca
+
+      // Per ora, mostriamo un messaggio all'utente
+      alert(
+        'Account personale rilevato!\n\n' +
+        'L\'API di Figma non permette di elencare automaticamente i file personali.\n\n' +
+        'Per vedere i tuoi file:\n' +
+        '1. Vai su Figma\n' +
+        '2. Crea un nuovo progetto (es. "My Files")\n' +
+        '3. Sposta i file dal Draft al progetto\n' +
+        '4. Ricarica questa pagina'
+      );
+
+      setFiles([]);
+      setProjects([]);
+    } catch (error) {
+      console.error('Errore caricamento file utente:', error);
+    }
+  }
+
   async function loadAllFiles(teams: FigmaTeam[], tokenToUse: string) {
     try {
       const allFiles: FigmaFile[] = [];
+
+      console.log('Caricamento file da', teams.length, 'team...');
 
       // Carica file da tutti i team
       for (const team of teams) {
@@ -99,6 +128,8 @@ export function FigmaAccountViewer() {
         });
         const projectsData = await projectsResponse.json();
 
+        console.log(`Team ${team.name}:`, projectsData.projects?.length || 0, 'progetti');
+
         if (projectsData.projects) {
           // Per ogni progetto, carica i file
           for (const project of projectsData.projects) {
@@ -108,6 +139,7 @@ export function FigmaAccountViewer() {
               }
             });
             const filesData = await filesResponse.json();
+            console.log(`Progetto ${project.name}:`, filesData.files?.length || 0, 'file');
             if (filesData.files) {
               allFiles.push(...filesData.files);
             }
@@ -115,6 +147,7 @@ export function FigmaAccountViewer() {
         }
       }
 
+      console.log('Totale file caricati da team:', allFiles.length);
       setFiles(allFiles);
     } catch (error) {
       console.error('Errore caricamento tutti i file:', error);
@@ -130,9 +163,12 @@ export function FigmaAccountViewer() {
       });
       const data = await response.json();
 
-      if (data.team_ids) {
+      console.log('User info:', data);
+
+      const teamsData: FigmaTeam[] = [];
+
+      if (data.team_ids && data.team_ids.length > 0) {
         // Carica i dettagli di ogni team
-        const teamsData: FigmaTeam[] = [];
         for (const teamId of data.team_ids) {
           const teamResponse = await fetch(`https://api.figma.com/v1/teams/${teamId}/projects`, {
             headers: {
@@ -155,6 +191,14 @@ export function FigmaAccountViewer() {
           setSelectedTeam(teamsData[0].id);
           await loadProjects(teamsData[0].id, tokenToUse);
         }
+      } else {
+        // Nessun team - account personale
+        console.log('Account personale senza team, carico tutti i file disponibili');
+
+        // Per account personali, dobbiamo usare l'endpoint dei file dell'utente
+        // Purtroppo Figma API non ha un endpoint diretto per "tutti i miei file"
+        // Dobbiamo usare un workaround: caricare dai file che l'utente può vedere
+        await loadUserFiles(tokenToUse);
       }
     } catch (error) {
       console.error('Errore caricamento team:', error);
@@ -199,15 +243,34 @@ export function FigmaAccountViewer() {
   async function loadRecentFiles(tokenToUse?: string) {
     const currentToken = tokenToUse || token;
     try {
+      // Usa l'endpoint per ottenere i file recenti dell'utente
       const response = await fetch('https://api.figma.com/v1/me', {
         headers: {
           'X-Figma-Token': currentToken
         }
       });
       const data = await response.json();
-      
-      // L'API non fornisce direttamente i file recenti, quindi usiamo i file dei progetti
-      setRecentFiles([]);
+
+      console.log('User data:', data);
+
+      // Carica i file recenti se disponibili
+      if (data.recent_files) {
+        const recentFilesData: FigmaFile[] = data.recent_files.map((file: any) => ({
+          key: file.key,
+          name: file.name,
+          thumbnail_url: file.thumbnail_url || '',
+          last_modified: file.last_modified || new Date().toISOString()
+        }));
+        setRecentFiles(recentFilesData);
+
+        // Se non ci sono file dai progetti, usa i file recenti
+        setFiles((prevFiles) => {
+          if (prevFiles.length === 0) {
+            return recentFilesData;
+          }
+          return prevFiles;
+        });
+      }
     } catch (error) {
       console.error('Errore caricamento file recenti:', error);
     }
@@ -382,7 +445,7 @@ export function FigmaAccountViewer() {
           </div>
 
           <TabsContent value="files" className="flex-1 m-0 p-6">
-            <div className="mb-4">
+            <div className="mb-4 space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
                 <Input
@@ -392,9 +455,40 @@ export function FigmaAccountViewer() {
                   className="pl-10 bg-[#0d1117] border-gray-700 text-white placeholder:text-gray-500"
                 />
               </div>
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Oppure incolla URL Figma (https://www.figma.com/file/...)"
+                  value={fileUrl}
+                  onChange={(e) => setFileUrl(e.target.value)}
+                  className="flex-1 bg-[#0d1117] border-gray-700 text-white placeholder:text-gray-500"
+                />
+                <Button
+                  onClick={() => {
+                    const match = fileUrl.match(/file\/([a-zA-Z0-9]+)/);
+                    if (match) {
+                      const fileKey = match[1];
+                      const fileName = fileUrl.split('/').pop()?.split('?')[0] || 'File';
+                      openFile({
+                        key: fileKey,
+                        name: fileName,
+                        thumbnail_url: '',
+                        last_modified: new Date().toISOString()
+                      });
+                      setFileUrl('');
+                    } else {
+                      alert('URL non valido. Usa formato: https://www.figma.com/file/...');
+                    }
+                  }}
+                  disabled={!fileUrl.trim()}
+                  className="bg-[#238636] hover:bg-[#2ea043] text-white"
+                >
+                  Apri
+                </Button>
+              </div>
             </div>
 
-            <ScrollArea className="h-[calc(100vh-240px)]">
+            <ScrollArea className="h-[calc(100vh-320px)]">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredFiles.map((file) => (
                   <Card
