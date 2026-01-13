@@ -89,27 +89,70 @@ export function FigmaAccountViewer() {
 
   async function loadUserFiles(tokenToUse: string) {
     try {
-      console.log('Tentativo di caricare file per account personale...');
+      console.log('Caricamento file per account personale...');
 
-      // Prova a ottenere i file dall'utente
-      // L'API Figma non ha un endpoint diretto per "tutti i file dell'utente"
-      // Dobbiamo chiedere all'utente di inserire manualmente gli URL o usare la ricerca
+      // Per account personali, proviamo a usare l'ID utente come "team"
+      const userResponse = await fetch('https://api.figma.com/v1/me', {
+        headers: {
+          'X-Figma-Token': tokenToUse
+        }
+      });
+      const userData = await userResponse.json();
 
-      // Per ora, mostriamo un messaggio all'utente
-      alert(
-        'Account personale rilevato!\n\n' +
-        'L\'API di Figma non permette di elencare automaticamente i file personali.\n\n' +
-        'Per vedere i tuoi file:\n' +
-        '1. Vai su Figma\n' +
-        '2. Crea un nuovo progetto (es. "My Files")\n' +
-        '3. Sposta i file dal Draft al progetto\n' +
-        '4. Ricarica questa pagina'
-      );
+      console.log('Dati utente completi:', userData);
 
+      // Prova 1: Usa l'ID utente come se fosse un team
+      if (userData.id) {
+        console.log('Tentativo di caricare progetti per user ID:', userData.id);
+
+        try {
+          const projectsResponse = await fetch(`https://api.figma.com/v1/users/${userData.id}/projects`, {
+            headers: {
+              'X-Figma-Token': tokenToUse
+            }
+          });
+
+          if (projectsResponse.ok) {
+            const projectsData = await projectsResponse.json();
+            console.log('Progetti trovati:', projectsData);
+
+            if (projectsData.projects) {
+              setProjects(projectsData.projects);
+
+              // Carica file da tutti i progetti
+              const allFiles: FigmaFile[] = [];
+              for (const project of projectsData.projects) {
+                const filesResponse = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
+                  headers: {
+                    'X-Figma-Token': tokenToUse
+                  }
+                });
+                const filesData = await filesResponse.json();
+                console.log(`File nel progetto ${project.name}:`, filesData.files?.length || 0);
+                if (filesData.files) {
+                  allFiles.push(...filesData.files);
+                }
+              }
+              setFiles(allFiles);
+              console.log('Totale file caricati:', allFiles.length);
+              return;
+            }
+          }
+        } catch (e) {
+          console.log('Endpoint users non disponibile, provo con approccio alternativo');
+        }
+      }
+
+      // Se non funziona, proviamo ad accedere come se fosse un team personale
+      // Alcuni account personali hanno un team_id che corrisponde all'utente
       setFiles([]);
       setProjects([]);
+
+      console.error('Impossibile caricare file automaticamente. L\'API Figma non espone i file dei Drafts personali.');
     } catch (error) {
       console.error('Errore caricamento file utente:', error);
+      setFiles([]);
+      setProjects([]);
     }
   }
 
