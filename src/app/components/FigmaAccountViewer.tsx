@@ -86,6 +86,41 @@ export function FigmaAccountViewer() {
     }
   }
 
+  async function loadAllFiles(teams: FigmaTeam[], tokenToUse: string) {
+    try {
+      const allFiles: FigmaFile[] = [];
+
+      // Carica file da tutti i team
+      for (const team of teams) {
+        const projectsResponse = await fetch(`https://api.figma.com/v1/teams/${team.id}/projects`, {
+          headers: {
+            'X-Figma-Token': tokenToUse
+          }
+        });
+        const projectsData = await projectsResponse.json();
+
+        if (projectsData.projects) {
+          // Per ogni progetto, carica i file
+          for (const project of projectsData.projects) {
+            const filesResponse = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
+              headers: {
+                'X-Figma-Token': tokenToUse
+              }
+            });
+            const filesData = await filesResponse.json();
+            if (filesData.files) {
+              allFiles.push(...filesData.files);
+            }
+          }
+        }
+      }
+
+      setFiles(allFiles);
+    } catch (error) {
+      console.error('Errore caricamento tutti i file:', error);
+    }
+  }
+
   async function loadTeams(tokenToUse: string) {
     try {
       const response = await fetch('https://api.figma.com/v1/me', {
@@ -94,7 +129,7 @@ export function FigmaAccountViewer() {
         }
       });
       const data = await response.json();
-      
+
       if (data.team_ids) {
         // Carica i dettagli di ogni team
         const teamsData: FigmaTeam[] = [];
@@ -111,7 +146,10 @@ export function FigmaAccountViewer() {
           });
         }
         setTeams(teamsData);
-        
+
+        // Carica TUTTI i file da TUTTI i team
+        await loadAllFiles(teamsData, tokenToUse);
+
         // Seleziona il primo team
         if (teamsData.length > 0) {
           setSelectedTeam(teamsData[0].id);
