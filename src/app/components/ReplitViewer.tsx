@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { ScrollArea } from './ui/scroll-area';
 import { Code, Download, Eye, Loader2, Save, Github } from 'lucide-react';
@@ -14,11 +13,12 @@ interface GithubRepo {
   default_branch: string;
 }
 
+// Leggi variabili d'ambiente
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN || '';
+
 export function ReplitViewer() {
-  const [githubToken, setGithubToken] = useState('');
-  const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [supabaseKey, setSupabaseKey] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [repos, setRepos] = useState<GithubRepo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<GithubRepo | null>(null);
@@ -27,30 +27,10 @@ export function ReplitViewer() {
   const [showPreview, setShowPreview] = useState(false);
   const [savedUrl, setSavedUrl] = useState('');
 
-  async function handleAuth() {
-    // GitHub token è opzionale per repo pubblici
-    if (!supabaseUrl.trim() || !supabaseKey.trim()) {
-      alert('Inserisci almeno Supabase URL e Key');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      if (githubToken) {
-        localStorage.setItem('github_token', githubToken);
-      }
-      localStorage.setItem('supabase_url', supabaseUrl);
-      localStorage.setItem('supabase_key', supabaseKey);
-
-      setIsAuthenticated(true);
-      await loadRepos();
-    } catch (error) {
-      console.error('Errore:', error);
-      alert('Errore durante la connessione');
-    } finally {
-      setLoading(false);
-    }
-  }
+  useEffect(() => {
+    // Carica automaticamente i repo all'avvio
+    loadRepos();
+  }, []);
 
   async function loadRepos() {
     setLoading(true);
@@ -59,8 +39,8 @@ export function ReplitViewer() {
         'Accept': 'application/vnd.github.v3+json'
       };
 
-      if (githubToken) {
-        headers['Authorization'] = `Bearer ${githubToken}`;
+      if (GITHUB_TOKEN) {
+        headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
       }
 
       // Carica repository dell'utente o dell'organizzazione wasabi-offers
@@ -76,7 +56,7 @@ export function ReplitViewer() {
       setRepos(data);
     } catch (error) {
       console.error('Errore caricamento repo:', error);
-      alert('Errore nel caricamento dei repository. Se sono privati, serve il GitHub token.');
+      console.error('Se i repository sono privati, aggiungi VITE_GITHUB_TOKEN nel file .env');
     } finally {
       setLoading(false);
     }
@@ -91,8 +71,8 @@ export function ReplitViewer() {
         'Accept': 'application/vnd.github.v3.raw'
       };
 
-      if (githubToken) {
-        headers['Authorization'] = `Bearer ${githubToken}`;
+      if (GITHUB_TOKEN) {
+        headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
       }
 
       // Prova a caricare vari file comuni di React
@@ -193,14 +173,19 @@ export function ReplitViewer() {
       return;
     }
 
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      alert('Configura VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nel file .env');
+      return;
+    }
+
     setLoading(true);
     try {
-      const response = await fetch(`${supabaseUrl}/rest/v1/html_exports`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/html_exports`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
           'Prefer': 'return=representation'
         },
         body: JSON.stringify({
@@ -219,82 +204,16 @@ export function ReplitViewer() {
       const fileId = data[0]?.id || Date.now();
 
       // Genera URL per download
-      const downloadUrl = `${supabaseUrl}/rest/v1/html_exports?id=eq.${fileId}&select=html_content`;
+      const downloadUrl = `${SUPABASE_URL}/rest/v1/html_exports?id=eq.${fileId}&select=html_content`;
       setSavedUrl(downloadUrl);
 
       alert('✅ Salvato su Supabase!');
     } catch (error) {
       console.error('Errore salvataggio:', error);
-      alert('Errore durante il salvataggio. Verifica le credenziali Supabase e che la tabella html_exports esista.');
+      alert('Errore durante il salvataggio. Verifica le credenziali Supabase nel file .env e che la tabella html_exports esista.');
     } finally {
       setLoading(false);
     }
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="size-full flex items-center justify-center bg-gray-900 p-6">
-        <Card className="w-full max-w-2xl p-8 bg-gray-800 border-gray-600">
-          <div className="text-center mb-6">
-            <Github className="size-16 mx-auto mb-4 text-white" />
-            <h1 className="text-2xl text-white mb-2">GitHub → HTML Converter</h1>
-            <p className="text-gray-400 text-sm">Converti le tue app React da GitHub in HTML</p>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="text-gray-300 text-sm font-medium mb-2 block">
-                GitHub Token (opzionale per repo pubblici)
-              </label>
-              <Input
-                type="password"
-                placeholder="ghp_xxx... (opzionale)"
-                value={githubToken}
-                onChange={(e) => setGithubToken(e.target.value)}
-                className="bg-gray-700 border-gray-500 text-white"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Serve solo per repository privati. Crea su: Settings → Developer settings → Personal access tokens
-              </p>
-            </div>
-
-            <div>
-              <label className="text-gray-300 text-sm font-medium mb-2 block">
-                Supabase URL *
-              </label>
-              <Input
-                placeholder="https://xxx.supabase.co"
-                value={supabaseUrl}
-                onChange={(e) => setSupabaseUrl(e.target.value)}
-                className="bg-gray-700 border-gray-500 text-white"
-              />
-            </div>
-
-            <div>
-              <label className="text-gray-300 text-sm font-medium mb-2 block">
-                Supabase Anon Key *
-              </label>
-              <Input
-                type="password"
-                placeholder="eyJhbGci..."
-                value={supabaseKey}
-                onChange={(e) => setSupabaseKey(e.target.value)}
-                className="bg-gray-700 border-gray-500 text-white"
-              />
-            </div>
-
-            <Button
-              onClick={handleAuth}
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Github className="size-4 mr-2" />}
-              Connetti
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
   }
 
   if (!selectedRepo) {
