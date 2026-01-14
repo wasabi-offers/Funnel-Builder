@@ -5,18 +5,19 @@ import { ScrollArea } from './ui/scroll-area';
 import { Code, Download, Eye, Loader2, Save, Github } from 'lucide-react';
 
 interface ReplitApp {
-  id: string;
-  title: string;
+  id: number;
+  name: string;
+  full_name: string;
   description: string;
-  url: string;
+  html_url: string;
   language: string;
-  timeCreated: string;
+  created_at: string;
+  topics: string[];
 }
 
 // Leggi variabili d'ambiente
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const REPLIT_TOKEN = import.meta.env.VITE_REPLIT_TOKEN || '';
 
 export function ReplitViewer() {
   const [loading, setLoading] = useState(false);
@@ -33,52 +34,24 @@ export function ReplitViewer() {
   }, []);
 
   async function loadRepos() {
-    if (!REPLIT_TOKEN) {
-      console.error('VITE_REPLIT_TOKEN non configurato nel file .env');
-      alert('Configura VITE_REPLIT_TOKEN nel file .env per accedere alle app Replit');
-      return;
-    }
-
     setLoading(true);
     try {
-      // Query GraphQL per ottenere le repls
-      const query = `
-        query {
-          currentUser {
-            repls(count: 100) {
-              items {
-                id
-                title
-                description
-                url
-                language
-                timeCreated
-              }
-            }
-          }
-        }
-      `;
-
-      const response = await fetch('https://replit.com/graphql', {
-        method: 'POST',
+      // Usa GitHub API per caricare i repository (sincronizzati con Replit)
+      const response = await fetch('https://api.github.com/users/wasabi-offers/repos?per_page=100', {
         headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Cookie': `connect.sid=${REPLIT_TOKEN}`
-        },
-        body: JSON.stringify({ query })
+          'Accept': 'application/vnd.github.v3+json'
+        }
       });
 
       if (!response.ok) {
-        throw new Error('Errore caricamento app Replit');
+        throw new Error('Errore caricamento repository');
       }
 
       const data = await response.json();
-      const replsList = data.data?.currentUser?.repls?.items || [];
-      setRepls(replsList);
+      setRepls(data);
     } catch (error) {
-      console.error('Errore caricamento app Replit:', error);
-      alert('Errore nel caricamento delle app Replit. Verifica che il token sia valido.');
+      console.error('Errore caricamento repository:', error);
+      alert('Errore nel caricamento delle app. Verifica la connessione.');
     } finally {
       setLoading(false);
     }
@@ -89,47 +62,11 @@ export function ReplitViewer() {
     setLoading(true);
 
     try {
-      // Query GraphQL per ottenere i file della repl
-      const query = `
-        query ReplFiles($replId: String!) {
-          repl(id: $replId) {
-            ... on Repl {
-              id
-              files {
-                items {
-                  path
-                  content
-                }
-              }
-            }
-          }
-        }
-      `;
-
-      const response = await fetch('https://replit.com/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Cookie': `connect.sid=${REPLIT_TOKEN}`
-        },
-        body: JSON.stringify({
-          query,
-          variables: { replId: repl.id }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Errore caricamento file dalla Repl');
-      }
-
-      const data = await response.json();
-      const files = data.data?.repl?.files?.items || [];
-
-      // Cerca file React comuni
+      // Cerca file React comuni usando GitHub API
       const possibleFiles = [
         'src/App.tsx',
         'src/App.jsx',
+        'src/app/App.tsx',
         'App.tsx',
         'App.jsx',
         'index.jsx',
@@ -137,19 +74,41 @@ export function ReplitViewer() {
       ];
 
       let code = '';
-      for (const fileName of possibleFiles) {
-        const file = files.find((f: any) => f.path === fileName);
-        if (file && file.content) {
-          code = file.content;
-          console.log(`Trovato: ${fileName}`);
-          break;
+      for (const filePath of possibleFiles) {
+        try {
+          const response = await fetch(
+            `https://api.github.com/repos/${repl.full_name}/contents/${filePath}`,
+            {
+              headers: {
+                'Accept': 'application/vnd.github.v3.raw'
+              }
+            }
+          );
+
+          if (response.ok) {
+            const text = await response.text();
+            // Se è JSON con content encodato in base64, decodifica
+            try {
+              const json = JSON.parse(text);
+              if (json.content) {
+                code = atob(json.content.replace(/\n/g, ''));
+              }
+            } catch {
+              // Altrimenti usa il testo così com'è
+              code = text;
+            }
+            console.log(`Trovato: ${filePath}`);
+            break;
+          }
+        } catch (e) {
+          console.log(`File ${filePath} non trovato`);
         }
       }
 
       if (code) {
         setReactCode(code);
       } else {
-        setReactCode('// Nessun file React trovato in questa app Replit.');
+        setReactCode('// Nessun file React trovato in questo repository.');
       }
     } catch (error) {
       console.error('Errore caricamento codice:', error);
@@ -188,7 +147,7 @@ export function ReplitViewer() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${selectedRepl?.title || 'App'}</title>
+  <title>${selectedRepl?.name || 'App'}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -231,8 +190,8 @@ export function ReplitViewer() {
           'Prefer': 'return=representation'
         },
         body: JSON.stringify({
-          app_name: selectedRepl?.title,
-          repo_url: selectedRepl?.url,
+          app_name: selectedRepl?.name,
+          repo_url: selectedRepl?.html_url,
           html_content: htmlCode,
           created_at: new Date().toISOString()
         })
@@ -262,7 +221,7 @@ export function ReplitViewer() {
     return (
       <div className="size-full flex flex-col bg-gray-900 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl text-white font-bold">Le tue App Replit</h2>
+          <h2 className="text-2xl text-white font-bold">Le tue App (GitHub/Replit)</h2>
           <Button
             onClick={loadRepos}
             disabled={loading}
@@ -287,11 +246,13 @@ export function ReplitViewer() {
                   onClick={() => selectRepl(repl)}
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-white font-semibold text-lg">{repl.title}</h3>
-                    <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">{repl.language}</span>
+                    <h3 className="text-white font-semibold text-lg">{repl.name}</h3>
+                    {repl.language && (
+                      <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">{repl.language}</span>
+                    )}
                   </div>
                   <p className="text-gray-400 text-sm mb-3">{repl.description || 'Nessuna descrizione'}</p>
-                  <p className="text-xs text-gray-500">{new Date(repl.timeCreated).toLocaleDateString()}</p>
+                  <p className="text-xs text-gray-500">{new Date(repl.created_at).toLocaleDateString()}</p>
                 </Card>
               ))}
             </div>
@@ -312,8 +273,8 @@ export function ReplitViewer() {
           >
             ← Indietro
           </Button>
-          <h2 className="text-xl text-white font-bold">{selectedRepl.title}</h2>
-          <p className="text-sm text-gray-400">{selectedRepl.language} • {selectedRepl.url}</p>
+          <h2 className="text-xl text-white font-bold">{selectedRepl.name}</h2>
+          <p className="text-sm text-gray-400">{selectedRepl.language || 'N/A'} • {selectedRepl.html_url}</p>
         </div>
 
         <div className="flex gap-2">
@@ -345,7 +306,7 @@ export function ReplitViewer() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `${selectedRepl.title}.html`;
+                    a.download = `${selectedRepl.name}.html`;
                     a.click();
                   }}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
