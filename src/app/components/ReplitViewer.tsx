@@ -4,110 +4,152 @@ import { Card } from './ui/card';
 import { ScrollArea } from './ui/scroll-area';
 import { Code, Download, Eye, Loader2, Save, Github } from 'lucide-react';
 
-interface GithubRepo {
-  id: number;
-  name: string;
-  full_name: string;
+interface ReplitApp {
+  id: string;
+  title: string;
   description: string;
-  html_url: string;
-  default_branch: string;
+  url: string;
+  language: string;
+  timeCreated: string;
 }
 
 // Leggi variabili d'ambiente
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN || '';
+const REPLIT_TOKEN = import.meta.env.VITE_REPLIT_TOKEN || '';
 
 export function ReplitViewer() {
   const [loading, setLoading] = useState(false);
-  const [repos, setRepos] = useState<GithubRepo[]>([]);
-  const [selectedRepo, setSelectedRepo] = useState<GithubRepo | null>(null);
+  const [repls, setRepls] = useState<ReplitApp[]>([]);
+  const [selectedRepl, setSelectedRepl] = useState<ReplitApp | null>(null);
   const [reactCode, setReactCode] = useState('');
   const [htmlCode, setHtmlCode] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [savedUrl, setSavedUrl] = useState('');
 
   useEffect(() => {
-    // Carica automaticamente i repo all'avvio
+    // Carica automaticamente le app Replit all'avvio
     loadRepos();
   }, []);
 
   async function loadRepos() {
+    if (!REPLIT_TOKEN) {
+      console.error('VITE_REPLIT_TOKEN non configurato nel file .env');
+      alert('Configura VITE_REPLIT_TOKEN nel file .env per accedere alle app Replit');
+      return;
+    }
+
     setLoading(true);
     try {
-      const headers: HeadersInit = {
-        'Accept': 'application/vnd.github.v3+json'
-      };
+      // Query GraphQL per ottenere le repls
+      const query = `
+        query {
+          currentUser {
+            repls(count: 100) {
+              items {
+                id
+                title
+                description
+                url
+                language
+                timeCreated
+              }
+            }
+          }
+        }
+      `;
 
-      if (GITHUB_TOKEN) {
-        headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
-      }
-
-      // Carica repository dell'utente o dell'organizzazione wasabi-offers
-      const response = await fetch('https://api.github.com/users/wasabi-offers/repos?per_page=100', {
-        headers
+      const response = await fetch('https://replit.com/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Cookie': `connect.sid=${REPLIT_TOKEN}`
+        },
+        body: JSON.stringify({ query })
       });
 
       if (!response.ok) {
-        throw new Error('Errore caricamento repository');
+        throw new Error('Errore caricamento app Replit');
       }
 
       const data = await response.json();
-      setRepos(data);
+      const replsList = data.data?.currentUser?.repls?.items || [];
+      setRepls(replsList);
     } catch (error) {
-      console.error('Errore caricamento repo:', error);
-      console.error('Se i repository sono privati, aggiungi VITE_GITHUB_TOKEN nel file .env');
+      console.error('Errore caricamento app Replit:', error);
+      alert('Errore nel caricamento delle app Replit. Verifica che il token sia valido.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function selectRepo(repo: GithubRepo) {
-    setSelectedRepo(repo);
+  async function selectRepl(repl: ReplitApp) {
+    setSelectedRepl(repl);
     setLoading(true);
 
     try {
-      const headers: HeadersInit = {
-        'Accept': 'application/vnd.github.v3.raw'
-      };
+      // Query GraphQL per ottenere i file della repl
+      const query = `
+        query ReplFiles($replId: String!) {
+          repl(id: $replId) {
+            ... on Repl {
+              id
+              files {
+                items {
+                  path
+                  content
+                }
+              }
+            }
+          }
+        }
+      `;
 
-      if (GITHUB_TOKEN) {
-        headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
+      const response = await fetch('https://replit.com/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Cookie': `connect.sid=${REPLIT_TOKEN}`
+        },
+        body: JSON.stringify({
+          query,
+          variables: { replId: repl.id }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore caricamento file dalla Repl');
       }
 
-      // Prova a caricare vari file comuni di React
+      const data = await response.json();
+      const files = data.data?.repl?.files?.items || [];
+
+      // Cerca file React comuni
       const possibleFiles = [
         'src/App.tsx',
         'src/App.jsx',
-        'src/app/App.tsx',
         'App.tsx',
-        'App.jsx'
+        'App.jsx',
+        'index.jsx',
+        'index.tsx'
       ];
 
       let code = '';
-      for (const filePath of possibleFiles) {
-        try {
-          const response = await fetch(
-            `https://api.github.com/repos/${repo.full_name}/contents/${filePath}`,
-            { headers }
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            // Decodifica base64
-            code = atob(data.content);
-            console.log(`Trovato: ${filePath}`);
-            break;
-          }
-        } catch (e) {
-          console.log(`File ${filePath} non trovato`);
+      for (const fileName of possibleFiles) {
+        const file = files.find((f: any) => f.path === fileName);
+        if (file && file.content) {
+          code = file.content;
+          console.log(`Trovato: ${fileName}`);
+          break;
         }
       }
 
       if (code) {
         setReactCode(code);
       } else {
-        setReactCode('// Nessun file React trovato. Prova a specificare il percorso manualmente.');
+        setReactCode('// Nessun file React trovato in questa app Replit.');
       }
     } catch (error) {
       console.error('Errore caricamento codice:', error);
@@ -146,7 +188,7 @@ export function ReplitViewer() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${selectedRepo?.name || 'App'}</title>
+  <title>${selectedRepl?.title || 'App'}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -189,8 +231,8 @@ export function ReplitViewer() {
           'Prefer': 'return=representation'
         },
         body: JSON.stringify({
-          app_name: selectedRepo?.name,
-          repo_url: selectedRepo?.html_url,
+          app_name: selectedRepl?.title,
+          repo_url: selectedRepl?.url,
           html_content: htmlCode,
           created_at: new Date().toISOString()
         })
@@ -216,11 +258,11 @@ export function ReplitViewer() {
     }
   }
 
-  if (!selectedRepo) {
+  if (!selectedRepl) {
     return (
       <div className="size-full flex flex-col bg-gray-900 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl text-white font-bold">Repository GitHub (wasabi-offers)</h2>
+          <h2 className="text-2xl text-white font-bold">Le tue App Replit</h2>
           <Button
             onClick={loadRepos}
             disabled={loading}
@@ -238,15 +280,18 @@ export function ReplitViewer() {
         ) : (
           <ScrollArea className="flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {repos.map((repo) => (
+              {repls.map((repl) => (
                 <Card
-                  key={repo.id}
+                  key={repl.id}
                   className="bg-gray-800 border-gray-600 hover:border-blue-400 cursor-pointer transition-all p-6"
-                  onClick={() => selectRepo(repo)}
+                  onClick={() => selectRepl(repl)}
                 >
-                  <h3 className="text-white font-semibold text-lg mb-2">{repo.name}</h3>
-                  <p className="text-gray-400 text-sm mb-3">{repo.description || 'Nessuna descrizione'}</p>
-                  <p className="text-xs text-gray-500">{repo.full_name}</p>
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="text-white font-semibold text-lg">{repl.title}</h3>
+                    <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">{repl.language}</span>
+                  </div>
+                  <p className="text-gray-400 text-sm mb-3">{repl.description || 'Nessuna descrizione'}</p>
+                  <p className="text-xs text-gray-500">{new Date(repl.timeCreated).toLocaleDateString()}</p>
                 </Card>
               ))}
             </div>
@@ -262,13 +307,13 @@ export function ReplitViewer() {
         <div>
           <Button
             variant="ghost"
-            onClick={() => { setSelectedRepo(null); setHtmlCode(''); setShowPreview(false); }}
+            onClick={() => { setSelectedRepl(null); setHtmlCode(''); setShowPreview(false); }}
             className="text-gray-300 hover:text-white mb-2"
           >
             ← Indietro
           </Button>
-          <h2 className="text-xl text-white font-bold">{selectedRepo.name}</h2>
-          <p className="text-sm text-gray-400">{selectedRepo.full_name}</p>
+          <h2 className="text-xl text-white font-bold">{selectedRepl.title}</h2>
+          <p className="text-sm text-gray-400">{selectedRepl.language} • {selectedRepl.url}</p>
         </div>
 
         <div className="flex gap-2">
@@ -300,7 +345,7 @@ export function ReplitViewer() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `${selectedRepo.name}.html`;
+                    a.download = `${selectedRepl.title}.html`;
                     a.click();
                   }}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
