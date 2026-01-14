@@ -476,9 +476,9 @@ export function FigmaAccountViewer() {
   }
 
   return (
-    <div className="size-full flex flex-col bg-[#0d1117]">
+    <div className="size-full flex flex-col bg-gray-900">
       {/* Header */}
-      <div className="bg-[#161b22] border-b border-gray-700 p-4">
+      <div className="bg-gray-800 border-b border-gray-600 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <svg className="size-8 text-white" viewBox="0 0 24 24" fill="currentColor">
@@ -506,17 +506,17 @@ export function FigmaAccountViewer() {
       {/* Contenuto principale */}
       <div className="flex-1 overflow-hidden">
         <Tabs defaultValue="files" className="size-full flex flex-col">
-          <div className="bg-[#161b22] border-b border-gray-700 px-4">
+          <div className="bg-gray-800 border-b border-gray-600 px-4">
             <TabsList className="bg-transparent">
-              <TabsTrigger value="files" className="data-[state=active]:bg-[#0d1117]">
+              <TabsTrigger value="files" className="data-[state=active]:bg-gray-700 text-gray-200">
                 <File className="size-4 mr-2" />
                 File
               </TabsTrigger>
-              <TabsTrigger value="projects" className="data-[state=active]:bg-[#0d1117]">
+              <TabsTrigger value="projects" className="data-[state=active]:bg-gray-700 text-gray-200">
                 <Folder className="size-4 mr-2" />
                 Progetti
               </TabsTrigger>
-              <TabsTrigger value="teams" className="data-[state=active]:bg-[#0d1117]">
+              <TabsTrigger value="teams" className="data-[state=active]:bg-gray-700 text-gray-200">
                 <Users className="size-4 mr-2" />
                 Team
               </TabsTrigger>
@@ -525,7 +525,7 @@ export function FigmaAccountViewer() {
 
           <TabsContent value="files" className="flex-1 m-0 p-6">
             {files.length === 0 && (
-              <div className="mb-4 p-4 bg-[#161b22] border border-yellow-600 rounded-md">
+              <div className="mb-4 p-4 bg-yellow-900/20 border-2 border-yellow-500 rounded-md">
                 <p className="text-yellow-400 font-semibold mb-2">⚠️ Nessun file caricato automaticamente</p>
                 <p className="text-gray-300 text-sm mb-3">Il tuo account non ha team_ids nell'API. Inserisci manualmente il Team ID:</p>
                 <div className="flex gap-2">
@@ -533,7 +533,7 @@ export function FigmaAccountViewer() {
                     placeholder="Team ID (es: 123456789012345678)"
                     value={manualTeamId}
                     onChange={(e) => setManualTeamId(e.target.value)}
-                    className="flex-1 bg-[#0d1117] border-gray-700 text-white"
+                    className="flex-1 bg-gray-700 border-gray-500 text-white placeholder:text-gray-400"
                   />
                   <Button
                     onClick={loadFromManualTeamId}
@@ -556,7 +556,7 @@ export function FigmaAccountViewer() {
                   placeholder="Cerca file..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-[#0d1117] border-gray-700 text-white placeholder:text-gray-500"
+                  className="pl-10 bg-gray-700 border-gray-500 text-white placeholder:text-gray-400"
                 />
               </div>
 
@@ -565,7 +565,7 @@ export function FigmaAccountViewer() {
                   placeholder="Oppure incolla URL Figma (https://www.figma.com/file/...)"
                   value={fileUrl}
                   onChange={(e) => setFileUrl(e.target.value)}
-                  className="flex-1 bg-[#0d1117] border-gray-700 text-white placeholder:text-gray-500"
+                  className="flex-1 bg-gray-700 border-gray-500 text-white placeholder:text-gray-400"
                 />
                 <Button
                   onClick={() => {
@@ -597,10 +597,10 @@ export function FigmaAccountViewer() {
                 {filteredFiles.map((file) => (
                   <Card
                     key={file.key}
-                    className="bg-[#161b22] border-gray-700 hover:border-gray-600 cursor-pointer transition-all group"
+                    className="bg-gray-800 border-gray-600 hover:border-blue-400 cursor-pointer transition-all group shadow-lg hover:shadow-xl"
                     onClick={() => openFile(file)}
                   >
-                    <div className="aspect-video bg-[#0d1117] rounded-t overflow-hidden relative">
+                    <div className="aspect-video bg-gray-700 rounded-t overflow-hidden relative">
                       {file.thumbnail_url ? (
                         <img 
                           src={file.thumbnail_url} 
