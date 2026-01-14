@@ -27,9 +27,10 @@ export function ReplitViewer() {
   const [showPreview, setShowPreview] = useState(false);
   const [savedUrl, setSavedUrl] = useState('');
 
-  useEffect(() => {
-    loadReplitApps();
-  }, []);
+  // Caricamento automatico disabilitato finché la Edge Function non è deployata
+  // useEffect(() => {
+  //   loadReplitApps();
+  // }, []);
 
   async function loadReplitApps() {
     setLoading(true);
