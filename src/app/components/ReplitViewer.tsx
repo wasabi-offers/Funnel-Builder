@@ -32,6 +32,12 @@ export function ReplitViewer() {
   }, []);
 
   async function loadApps() {
+    console.log('=== DEBUG TOKEN ===');
+    console.log('REPLIT_TOKEN:', REPLIT_TOKEN);
+    console.log('REPLIT_TOKEN length:', REPLIT_TOKEN?.length);
+    console.log('import.meta.env:', import.meta.env);
+    console.log('==================');
+
     if (!REPLIT_TOKEN) {
       alert('Token Replit non configurato. Aggiungi VITE_REPLIT_TOKEN nel file .env');
       return;
