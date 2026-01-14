@@ -1,19 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from './ui/button';
-import { Card } from './ui/card';
+import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
-import { Code, Download, Eye, Loader2, Save, Github } from 'lucide-react';
-
-interface ReplitApp {
-  id: number;
-  name: string;
-  full_name: string;
-  description: string;
-  html_url: string;
-  language: string;
-  created_at: string;
-  topics: string[];
-}
+import { Download, Eye, Loader2, Save } from 'lucide-react';
 
 // Leggi variabili d'ambiente
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
@@ -21,48 +10,34 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export function ReplitViewer() {
   const [loading, setLoading] = useState(false);
-  const [repls, setRepls] = useState<ReplitApp[]>([]);
-  const [selectedRepl, setSelectedRepl] = useState<ReplitApp | null>(null);
+  const [replitUrl, setReplitUrl] = useState('');
+  const [appName, setAppName] = useState('');
   const [reactCode, setReactCode] = useState('');
   const [htmlCode, setHtmlCode] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [savedUrl, setSavedUrl] = useState('');
 
-  useEffect(() => {
-    // Carica automaticamente le app Replit all'avvio
-    loadRepos();
-  }, []);
+  async function loadFromReplit() {
+    if (!replitUrl.trim()) {
+      alert('Inserisci l\'URL della tua app Replit');
+      return;
+    }
 
-  async function loadRepos() {
     setLoading(true);
     try {
-      // Usa GitHub API per caricare i repository (sincronizzati con Replit)
-      const response = await fetch('https://api.github.com/users/wasabi-offers/repos?per_page=100', {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Errore caricamento repository');
+      // Estrai username e nome progetto dall'URL
+      // Formato: https://replit.com/@username/project-name
+      const match = replitUrl.match(/replit\.com\/@([^/]+)\/([^/?]+)/);
+      if (!match) {
+        throw new Error('URL Replit non valido. Usa il formato: https://replit.com/@username/project-name');
       }
 
-      const data = await response.json();
-      setRepls(data);
-    } catch (error) {
-      console.error('Errore caricamento repository:', error);
-      alert('Errore nel caricamento delle app. Verifica la connessione.');
-    } finally {
-      setLoading(false);
-    }
-  }
+      const [, username, projectName] = match;
+      setAppName(projectName);
 
-  async function selectRepl(repl: ReplitApp) {
-    setSelectedRepl(repl);
-    setLoading(true);
+      // Prova a caricare da GitHub (se sincronizzato)
+      const githubUrl = `https://github.com/${username}/${projectName}`;
 
-    try {
-      // Cerca file React comuni usando GitHub API
       const possibleFiles = [
         'src/App.tsx',
         'src/App.jsx',
@@ -70,14 +45,16 @@ export function ReplitViewer() {
         'App.tsx',
         'App.jsx',
         'index.jsx',
-        'index.tsx'
+        'index.tsx',
+        'src/index.tsx',
+        'src/index.jsx'
       ];
 
       let code = '';
       for (const filePath of possibleFiles) {
         try {
           const response = await fetch(
-            `https://api.github.com/repos/${repl.full_name}/contents/${filePath}`,
+            `https://api.github.com/repos/${username}/${projectName}/contents/${filePath}`,
             {
               headers: {
                 'Accept': 'application/vnd.github.v3.raw'
@@ -87,32 +64,33 @@ export function ReplitViewer() {
 
           if (response.ok) {
             const text = await response.text();
-            // Se è JSON con content encodato in base64, decodifica
             try {
               const json = JSON.parse(text);
               if (json.content) {
                 code = atob(json.content.replace(/\n/g, ''));
               }
             } catch {
-              // Altrimenti usa il testo così com'è
               code = text;
             }
-            console.log(`Trovato: ${filePath}`);
+            console.log(`✅ Trovato: ${filePath}`);
             break;
           }
         } catch (e) {
-          console.log(`File ${filePath} non trovato`);
+          console.log(`❌ File ${filePath} non trovato`);
         }
       }
 
       if (code) {
         setReactCode(code);
+        alert(`✅ Codice caricato da ${projectName}!`);
       } else {
-        setReactCode('// Nessun file React trovato in questo repository.');
+        setReactCode('// Nessun file React trovato. Assicurati che il progetto sia sincronizzato con GitHub.');
+        alert('⚠️ Nessun file React trovato. Verifica che il progetto Replit sia sincronizzato con GitHub.');
       }
-    } catch (error) {
-      console.error('Errore caricamento codice:', error);
-      setReactCode('// Errore nel caricamento del codice');
+    } catch (error: any) {
+      console.error('Errore caricamento:', error);
+      alert(error.message || 'Errore nel caricamento. Verifica l\'URL e che il progetto sia pubblico su GitHub.');
+      setReactCode('');
     } finally {
       setLoading(false);
     }
@@ -147,7 +125,7 @@ export function ReplitViewer() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${selectedRepl?.name || 'App'}</title>
+  <title>${appName || 'App'}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -190,8 +168,8 @@ export function ReplitViewer() {
           'Prefer': 'return=representation'
         },
         body: JSON.stringify({
-          app_name: selectedRepl?.name,
-          repo_url: selectedRepl?.html_url,
+          app_name: appName,
+          repo_url: replitUrl,
           html_content: htmlCode,
           created_at: new Date().toISOString()
         })
@@ -217,108 +195,89 @@ export function ReplitViewer() {
     }
   }
 
-  if (!selectedRepl) {
-    return (
-      <div className="size-full flex flex-col bg-gray-900 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl text-white font-bold">Le tue App (GitHub/Replit)</h2>
-          <Button
-            onClick={loadRepos}
-            disabled={loading}
-            variant="outline"
-            className="text-white border-gray-600"
-          >
-            {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : '🔄'} Ricarica
-          </Button>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center flex-1">
-            <Loader2 className="size-12 text-blue-400 animate-spin" />
-          </div>
-        ) : (
-          <ScrollArea className="flex-1">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {repls.map((repl) => (
-                <Card
-                  key={repl.id}
-                  className="bg-gray-800 border-gray-600 hover:border-blue-400 cursor-pointer transition-all p-6"
-                  onClick={() => selectRepl(repl)}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-white font-semibold text-lg">{repl.name}</h3>
-                    {repl.language && (
-                      <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">{repl.language}</span>
-                    )}
-                  </div>
-                  <p className="text-gray-400 text-sm mb-3">{repl.description || 'Nessuna descrizione'}</p>
-                  <p className="text-xs text-gray-500">{new Date(repl.created_at).toLocaleDateString()}</p>
-                </Card>
-              ))}
-            </div>
-          </ScrollArea>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="size-full flex flex-col bg-gray-900">
-      <div className="bg-gray-800 border-b border-gray-600 p-4 flex items-center justify-between">
-        <div>
+      <div className="bg-gray-800 border-b border-gray-600 p-4">
+        <h2 className="text-2xl text-white font-bold mb-4">Importa da Replit</h2>
+
+        <div className="flex gap-3 mb-4">
+          <Input
+            type="text"
+            placeholder="https://replit.com/@username/project-name"
+            value={replitUrl}
+            onChange={(e) => setReplitUrl(e.target.value)}
+            className="flex-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                loadFromReplit();
+              }
+            }}
+          />
           <Button
-            variant="ghost"
-            onClick={() => { setSelectedRepl(null); setHtmlCode(''); setShowPreview(false); }}
-            className="text-gray-300 hover:text-white mb-2"
+            onClick={loadFromReplit}
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]"
           >
-            ← Indietro
+            {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : '📥'} Carica
           </Button>
-          <h2 className="text-xl text-white font-bold">{selectedRepl.name}</h2>
-          <p className="text-sm text-gray-400">{selectedRepl.language || 'N/A'} • {selectedRepl.html_url}</p>
         </div>
 
-        <div className="flex gap-2">
-          <Button
-            onClick={convertReactToHTML}
-            disabled={loading || !reactCode}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Eye className="size-4 mr-2" />
-            Estrai HTML
-          </Button>
-
-          {htmlCode && (
-            <>
-              <Button
-                onClick={saveToSupabase}
-                disabled={loading}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Save className="size-4 mr-2" />
-                Salva
-              </Button>
-
-              {savedUrl && (
-                <Button
-                  onClick={() => {
-                    // Crea un blob e scarica
-                    const blob = new Blob([htmlCode], { type: 'text/html' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${selectedRepl.name}.html`;
-                    a.click();
-                  }}
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                >
-                  <Download className="size-4 mr-2" />
-                  Download HTML
-                </Button>
-              )}
-            </>
-          )}
-        </div>
+        {appName && (
+          <div className="text-sm text-gray-400">
+            App caricata: <span className="text-white font-semibold">{appName}</span>
+          </div>
+        )}
       </div>
+
+      {reactCode && (
+        <div className="bg-gray-800 border-b border-gray-600 p-4 flex items-center justify-between">
+          <div className="text-white font-semibold">
+            {appName || 'App Replit'}
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              onClick={convertReactToHTML}
+              disabled={loading || !reactCode}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Eye className="size-4 mr-2" />
+              Estrai HTML
+            </Button>
+
+            {htmlCode && (
+              <>
+                <Button
+                  onClick={saveToSupabase}
+                  disabled={loading}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Save className="size-4 mr-2" />
+                  Salva
+                </Button>
+
+                {savedUrl && (
+                  <Button
+                    onClick={() => {
+                      // Crea un blob e scarica
+                      const blob = new Blob([htmlCode], { type: 'text/html' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${appName || 'app'}.html`;
+                      a.click();
+                    }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    <Download className="size-4 mr-2" />
+                    Download HTML
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         {/* Codice React */}
