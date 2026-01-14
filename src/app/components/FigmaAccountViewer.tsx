@@ -367,7 +367,10 @@ export function FigmaAccountViewer() {
       await loadAllFiles(teamsData, token);
       await loadProjects(manualTeamId.trim(), token);
 
-      alert(`Team caricato! Trovati ${files.length} file.`);
+      // Aspetta un attimo per dare tempo allo stato di aggiornarsi
+      setTimeout(() => {
+        console.log('File caricati nello stato:', files.length);
+      }, 100);
     } catch (error) {
       console.error('Errore caricamento team manuale:', error);
       alert('Errore nel caricamento del team. Verifica il Team ID.');
@@ -589,7 +592,7 @@ export function FigmaAccountViewer() {
               </div>
             </div>
 
-            <ScrollArea className="h-[calc(100vh-320px)]">
+            <ScrollArea className="h-[calc(100vh-400px)] pr-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredFiles.map((file) => (
                   <Card
