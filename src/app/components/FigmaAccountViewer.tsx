@@ -48,6 +48,7 @@ export function FigmaAccountViewer() {
   const [searchQuery, setSearchQuery] = useState('');
   const [userInfo, setUserInfo] = useState<any>(null);
   const [fileUrl, setFileUrl] = useState('');
+  const [manualTeamId, setManualTeamId] = useState('');
 
   useEffect(() => {
     const savedToken = localStorage.getItem('figma_token');
@@ -346,6 +347,35 @@ export function FigmaAccountViewer() {
     setSelectedFile(null);
   }
 
+  async function loadFromManualTeamId() {
+    if (!manualTeamId.trim()) {
+      alert('Inserisci un Team ID');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const teamsData: FigmaTeam[] = [{
+        id: manualTeamId.trim(),
+        name: 'Il mio Team'
+      }];
+
+      setTeams(teamsData);
+      setSelectedTeam(manualTeamId.trim());
+
+      // Carica tutti i file dal team
+      await loadAllFiles(teamsData, token);
+      await loadProjects(manualTeamId.trim(), token);
+
+      alert(`Team caricato! Trovati ${files.length} file.`);
+    } catch (error) {
+      console.error('Errore caricamento team manuale:', error);
+      alert('Errore nel caricamento del team. Verifica il Team ID.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const filteredFiles = files.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -491,6 +521,31 @@ export function FigmaAccountViewer() {
           </div>
 
           <TabsContent value="files" className="flex-1 m-0 p-6">
+            {files.length === 0 && (
+              <div className="mb-4 p-4 bg-[#161b22] border border-yellow-600 rounded-md">
+                <p className="text-yellow-400 font-semibold mb-2">⚠️ Nessun file caricato automaticamente</p>
+                <p className="text-gray-300 text-sm mb-3">Il tuo account non ha team_ids nell'API. Inserisci manualmente il Team ID:</p>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Team ID (es: 123456789012345678)"
+                    value={manualTeamId}
+                    onChange={(e) => setManualTeamId(e.target.value)}
+                    className="flex-1 bg-[#0d1117] border-gray-700 text-white"
+                  />
+                  <Button
+                    onClick={loadFromManualTeamId}
+                    disabled={loading || !manualTeamId.trim()}
+                    className="bg-[#238636] hover:bg-[#2ea043] text-white"
+                  >
+                    {loading ? <Loader2 className="size-4 animate-spin" /> : 'Carica Team'}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Trova il Team ID nell'URL di Figma quando apri un progetto del team
+                </p>
+              </div>
+            )}
+
             <div className="mb-4 space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
