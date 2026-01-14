@@ -3,104 +3,135 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { ScrollArea } from './ui/scroll-area';
-import { Code, Download, Eye, Loader2, Save } from 'lucide-react';
+import { Code, Download, Eye, Loader2, Save, Github } from 'lucide-react';
 
-interface ReplitApp {
-  id: string;
-  title: string;
-  slug: string;
+interface GithubRepo {
+  id: number;
+  name: string;
+  full_name: string;
   description: string;
-  url: string;
+  html_url: string;
+  default_branch: string;
 }
 
 export function ReplitViewer() {
-  const [replitToken, setReplitToken] = useState('');
+  const [githubToken, setGithubToken] = useState('');
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [apps, setApps] = useState<ReplitApp[]>([]);
-  const [selectedApp, setSelectedApp] = useState<ReplitApp | null>(null);
+  const [repos, setRepos] = useState<GithubRepo[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<GithubRepo | null>(null);
   const [reactCode, setReactCode] = useState('');
   const [htmlCode, setHtmlCode] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [savedUrl, setSavedUrl] = useState('');
 
   async function handleAuth() {
-    if (!replitToken.trim() || !supabaseUrl.trim() || !supabaseKey.trim()) {
-      alert('Compila tutti i campi');
+    // GitHub token è opzionale per repo pubblici
+    if (!supabaseUrl.trim() || !supabaseKey.trim()) {
+      alert('Inserisci almeno Supabase URL e Key');
       return;
     }
 
     setLoading(true);
     try {
-      // Salva in localStorage
-      localStorage.setItem('replit_token', replitToken);
+      if (githubToken) {
+        localStorage.setItem('github_token', githubToken);
+      }
       localStorage.setItem('supabase_url', supabaseUrl);
       localStorage.setItem('supabase_key', supabaseKey);
 
       setIsAuthenticated(true);
-      await loadApps();
+      await loadRepos();
     } catch (error) {
-      console.error('Errore autenticazione:', error);
-      alert('Errore durante l\'autenticazione');
+      console.error('Errore:', error);
+      alert('Errore durante la connessione');
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadApps() {
+  async function loadRepos() {
     setLoading(true);
     try {
-      const response = await fetch('https://replit.com/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Cookie': `connect.sid=${replitToken}`
-        },
-        body: JSON.stringify({
-          query: `
-            query {
-              currentUser {
-                replsCreated(count: 50) {
-                  items {
-                    id
-                    title
-                    slug
-                    description
-                    url
-                  }
-                }
-              }
-            }
-          `
-        })
+      const headers: HeadersInit = {
+        'Accept': 'application/vnd.github.v3+json'
+      };
+
+      if (githubToken) {
+        headers['Authorization'] = `Bearer ${githubToken}`;
+      }
+
+      // Carica repository dell'utente o dell'organizzazione wasabi-offers
+      const response = await fetch('https://api.github.com/users/wasabi-offers/repos?per_page=100', {
+        headers
       });
 
-      const data = await response.json();
-      if (data.data?.currentUser?.replsCreated?.items) {
-        setApps(data.data.currentUser.replsCreated.items);
+      if (!response.ok) {
+        throw new Error('Errore caricamento repository');
       }
+
+      const data = await response.json();
+      setRepos(data);
     } catch (error) {
-      console.error('Errore caricamento app:', error);
+      console.error('Errore caricamento repo:', error);
+      alert('Errore nel caricamento dei repository. Se sono privati, serve il GitHub token.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function selectApp(app: ReplitApp) {
-    setSelectedApp(app);
+  async function selectRepo(repo: GithubRepo) {
+    setSelectedRepo(repo);
     setLoading(true);
 
     try {
-      // Carica il codice React dall'app (esempio con file App.tsx)
-      const response = await fetch(`${app.url}/App.tsx`);
-      const code = await response.text();
-      setReactCode(code);
+      const headers: HeadersInit = {
+        'Accept': 'application/vnd.github.v3.raw'
+      };
+
+      if (githubToken) {
+        headers['Authorization'] = `Bearer ${githubToken}`;
+      }
+
+      // Prova a caricare vari file comuni di React
+      const possibleFiles = [
+        'src/App.tsx',
+        'src/App.jsx',
+        'src/app/App.tsx',
+        'App.tsx',
+        'App.jsx'
+      ];
+
+      let code = '';
+      for (const filePath of possibleFiles) {
+        try {
+          const response = await fetch(
+            `https://api.github.com/repos/${repo.full_name}/contents/${filePath}`,
+            { headers }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            // Decodifica base64
+            code = atob(data.content);
+            console.log(`Trovato: ${filePath}`);
+            break;
+          }
+        } catch (e) {
+          console.log(`File ${filePath} non trovato`);
+        }
+      }
+
+      if (code) {
+        setReactCode(code);
+      } else {
+        setReactCode('// Nessun file React trovato. Prova a specificare il percorso manualmente.');
+      }
     } catch (error) {
       console.error('Errore caricamento codice:', error);
-      setReactCode('// Codice non disponibile o errore nel caricamento');
+      setReactCode('// Errore nel caricamento del codice');
     } finally {
       setLoading(false);
     }
@@ -110,22 +141,23 @@ export function ReplitViewer() {
     setLoading(true);
 
     try {
-      // Conversione base JSX → HTML
       let html = reactCode;
 
       // Rimuovi imports
-      html = html.replace(/import .+;/g, '');
+      html = html.replace(/import .+?;/g, '');
+      html = html.replace(/import .+? from .+?;/g, '');
 
       // Converti className in class
       html = html.replace(/className=/g, 'class=');
 
-      // Rimuovi export default
+      // Rimuovi export
       html = html.replace(/export default /g, '');
+      html = html.replace(/export /g, '');
 
       // Estrai il JSX dal return
-      const returnMatch = html.match(/return\s*\(([\s\S]*)\);/);
+      const returnMatch = html.match(/return\s*\(([\s\S]*?)\);?\s*}/);
       if (returnMatch) {
-        html = returnMatch[1];
+        html = returnMatch[1].trim();
       }
 
       // Wrappa in HTML completo
@@ -134,11 +166,14 @@ export function ReplitViewer() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${selectedApp?.title || 'App'}</title>
+  <title>${selectedRepo?.name || 'App'}</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+  </style>
 </head>
 <body>
-${html}
+  ${html}
 </body>
 </html>`;
 
@@ -146,7 +181,7 @@ ${html}
       setShowPreview(true);
     } catch (error) {
       console.error('Errore conversione:', error);
-      alert('Errore durante la conversione');
+      alert('Errore durante la conversione. Il formato potrebbe non essere supportato.');
     } finally {
       setLoading(false);
     }
@@ -165,25 +200,32 @@ ${html}
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=representation'
         },
         body: JSON.stringify({
-          app_name: selectedApp?.title,
+          app_name: selectedRepo?.name,
+          repo_url: selectedRepo?.html_url,
           html_content: htmlCode,
           created_at: new Date().toISOString()
         })
       });
 
+      if (!response.ok) {
+        throw new Error('Errore salvataggio su Supabase');
+      }
+
       const data = await response.json();
+      const fileId = data[0]?.id || Date.now();
 
       // Genera URL per download
-      const downloadUrl = `${supabaseUrl}/rest/v1/html_exports?id=eq.${data.id}`;
+      const downloadUrl = `${supabaseUrl}/rest/v1/html_exports?id=eq.${fileId}&select=html_content`;
       setSavedUrl(downloadUrl);
 
       alert('✅ Salvato su Supabase!');
     } catch (error) {
       console.error('Errore salvataggio:', error);
-      alert('Errore durante il salvataggio');
+      alert('Errore durante il salvataggio. Verifica le credenziali Supabase e che la tabella html_exports esista.');
     } finally {
       setLoading(false);
     }
@@ -194,28 +236,31 @@ ${html}
       <div className="size-full flex items-center justify-center bg-gray-900 p-6">
         <Card className="w-full max-w-2xl p-8 bg-gray-800 border-gray-600">
           <div className="text-center mb-6">
-            <Code className="size-16 mx-auto mb-4 text-orange-400" />
-            <h1 className="text-2xl text-white mb-2">Connetti Replit & Supabase</h1>
-            <p className="text-gray-400 text-sm">Converti le tue app React in HTML</p>
+            <Github className="size-16 mx-auto mb-4 text-white" />
+            <h1 className="text-2xl text-white mb-2">GitHub → HTML Converter</h1>
+            <p className="text-gray-400 text-sm">Converti le tue app React da GitHub in HTML</p>
           </div>
 
           <div className="space-y-4">
             <div>
               <label className="text-gray-300 text-sm font-medium mb-2 block">
-                Replit API Token
+                GitHub Token (opzionale per repo pubblici)
               </label>
               <Input
                 type="password"
-                placeholder="connect.sid=..."
-                value={replitToken}
-                onChange={(e) => setReplitToken(e.target.value)}
+                placeholder="ghp_xxx... (opzionale)"
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
                 className="bg-gray-700 border-gray-500 text-white"
               />
+              <p className="text-xs text-gray-400 mt-1">
+                Serve solo per repository privati. Crea su: Settings → Developer settings → Personal access tokens
+              </p>
             </div>
 
             <div>
               <label className="text-gray-300 text-sm font-medium mb-2 block">
-                Supabase URL
+                Supabase URL *
               </label>
               <Input
                 placeholder="https://xxx.supabase.co"
@@ -227,7 +272,7 @@ ${html}
 
             <div>
               <label className="text-gray-300 text-sm font-medium mb-2 block">
-                Supabase Anon Key
+                Supabase Anon Key *
               </label>
               <Input
                 type="password"
@@ -241,9 +286,10 @@ ${html}
             <Button
               onClick={handleAuth}
               disabled={loading}
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {loading ? <Loader2 className="size-4 animate-spin" /> : 'Connetti'}
+              {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Github className="size-4 mr-2" />}
+              Connetti
             </Button>
           </div>
         </Card>
@@ -251,26 +297,37 @@ ${html}
     );
   }
 
-  if (!selectedApp) {
+  if (!selectedRepo) {
     return (
       <div className="size-full flex flex-col bg-gray-900 p-6">
-        <h2 className="text-2xl text-white font-bold mb-4">Le tue App Replit</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl text-white font-bold">Repository GitHub (wasabi-offers)</h2>
+          <Button
+            onClick={loadRepos}
+            disabled={loading}
+            variant="outline"
+            className="text-white border-gray-600"
+          >
+            {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : '🔄'} Ricarica
+          </Button>
+        </div>
 
         {loading ? (
           <div className="flex items-center justify-center flex-1">
-            <Loader2 className="size-12 text-orange-400 animate-spin" />
+            <Loader2 className="size-12 text-blue-400 animate-spin" />
           </div>
         ) : (
           <ScrollArea className="flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {apps.map((app) => (
+              {repos.map((repo) => (
                 <Card
-                  key={app.id}
-                  className="bg-gray-800 border-gray-600 hover:border-orange-400 cursor-pointer transition-all p-6"
-                  onClick={() => selectApp(app)}
+                  key={repo.id}
+                  className="bg-gray-800 border-gray-600 hover:border-blue-400 cursor-pointer transition-all p-6"
+                  onClick={() => selectRepo(repo)}
                 >
-                  <h3 className="text-white font-semibold text-lg mb-2">{app.title}</h3>
-                  <p className="text-gray-400 text-sm">{app.description || 'Nessuna descrizione'}</p>
+                  <h3 className="text-white font-semibold text-lg mb-2">{repo.name}</h3>
+                  <p className="text-gray-400 text-sm mb-3">{repo.description || 'Nessuna descrizione'}</p>
+                  <p className="text-xs text-gray-500">{repo.full_name}</p>
                 </Card>
               ))}
             </div>
@@ -286,12 +343,13 @@ ${html}
         <div>
           <Button
             variant="ghost"
-            onClick={() => setSelectedApp(null)}
+            onClick={() => { setSelectedRepo(null); setHtmlCode(''); setShowPreview(false); }}
             className="text-gray-300 hover:text-white mb-2"
           >
             ← Indietro
           </Button>
-          <h2 className="text-xl text-white font-bold">{selectedApp.title}</h2>
+          <h2 className="text-xl text-white font-bold">{selectedRepo.name}</h2>
+          <p className="text-sm text-gray-400">{selectedRepo.full_name}</p>
         </div>
 
         <div className="flex gap-2">
@@ -317,11 +375,19 @@ ${html}
 
               {savedUrl && (
                 <Button
-                  onClick={() => window.open(savedUrl, '_blank')}
+                  onClick={() => {
+                    // Crea un blob e scarica
+                    const blob = new Blob([htmlCode], { type: 'text/html' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${selectedRepo.name}.html`;
+                    a.click();
+                  }}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   <Download className="size-4 mr-2" />
-                  Download
+                  Download HTML
                 </Button>
               )}
             </>
@@ -333,23 +399,35 @@ ${html}
         {/* Codice React */}
         <div className="flex-1 flex flex-col border-r border-gray-600">
           <div className="bg-gray-800 p-2 border-b border-gray-600">
-            <span className="text-gray-300 font-mono text-sm">React Code</span>
+            <span className="text-gray-300 font-mono text-sm">React Code (src/App.tsx)</span>
           </div>
           <ScrollArea className="flex-1">
-            <pre className="p-4 text-sm text-gray-300 font-mono">{reactCode}</pre>
+            <pre className="p-4 text-sm text-gray-300 font-mono whitespace-pre-wrap">{reactCode}</pre>
           </ScrollArea>
         </div>
 
         {/* HTML o Preview */}
         {showPreview && (
           <div className="flex-1 flex flex-col">
-            <div className="bg-gray-800 p-2 border-b border-gray-600">
+            <div className="bg-gray-800 p-2 border-b border-gray-600 flex items-center justify-between">
               <span className="text-gray-300 font-mono text-sm">HTML Preview</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  navigator.clipboard.writeText(htmlCode);
+                  alert('HTML copiato negli appunti!');
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                📋 Copia HTML
+              </Button>
             </div>
             <iframe
               srcDoc={htmlCode}
               className="flex-1 bg-white"
               title="Preview"
+              sandbox="allow-scripts"
             />
           </div>
         )}
