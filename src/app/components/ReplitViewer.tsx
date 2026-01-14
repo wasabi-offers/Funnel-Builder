@@ -6,7 +6,7 @@ import { Download, Loader2, Save, Code2, ExternalLink, Clock } from 'lucide-reac
 
 const SUPABASE_URL = 'https://yqcyglodttblvhwnasjg.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_WaCd9Kp0J1yKZzpxHDUjAg_MQnaC4d3';
-const PROXY_URL = 'http://localhost:3001/api/replit';
+const PROXY_URL = '/api/replit';
 
 interface ReplitApp {
   id: string;
