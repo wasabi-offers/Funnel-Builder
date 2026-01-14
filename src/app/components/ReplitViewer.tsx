@@ -5,18 +5,18 @@ import { ScrollArea } from './ui/scroll-area';
 import { Download, Eye, Loader2, Save } from 'lucide-react';
 
 interface ReplitApp {
-  id: number;
-  name: string;
-  full_name: string;
+  id: string;
+  title: string;
   description: string;
-  html_url: string;
+  url: string;
   language: string;
-  created_at: string;
+  timeCreated: string;
 }
 
 // Leggi variabili d'ambiente
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const REPLIT_TOKEN = import.meta.env.VITE_REPLIT_TOKEN || '';
 
 export function ReplitViewer() {
   const [loading, setLoading] = useState(false);
@@ -32,23 +32,54 @@ export function ReplitViewer() {
   }, []);
 
   async function loadApps() {
+    if (!REPLIT_TOKEN) {
+      alert('Token Replit non configurato. Aggiungi VITE_REPLIT_TOKEN nel file .env');
+      return;
+    }
+
     setLoading(true);
     try {
-      const response = await fetch('https://api.github.com/users/wasabi-offers/repos?per_page=100', {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json'
+      const query = `
+        query {
+          currentUser {
+            repls(count: 100) {
+              items {
+                id
+                title
+                description
+                url
+                language
+                timeCreated
+              }
+            }
+          }
         }
+      `;
+
+      const response = await fetch('https://replit.com/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Authorization': `Bearer ${REPLIT_TOKEN}`
+        },
+        body: JSON.stringify({ query })
       });
 
       if (!response.ok) {
-        throw new Error('Errore caricamento app');
+        throw new Error('Errore caricamento app Replit');
       }
 
       const data = await response.json();
-      setApps(data);
+      const replsList = data.data?.currentUser?.repls?.items || [];
+      setApps(replsList);
+
+      if (replsList.length === 0) {
+        alert('Nessuna app trovata. Verifica che il token sia valido.');
+      }
     } catch (error) {
       console.error('Errore caricamento app:', error);
-      alert('Errore nel caricamento delle app');
+      alert('Errore nel caricamento delle app Replit. Verifica il token.');
     } finally {
       setLoading(false);
     }
@@ -59,6 +90,44 @@ export function ReplitViewer() {
     setLoading(true);
 
     try {
+      // Query GraphQL per ottenere i file della repl
+      const query = `
+        query ReplFiles($replId: String!) {
+          repl(id: $replId) {
+            ... on Repl {
+              id
+              files {
+                items {
+                  path
+                  content
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await fetch('https://replit.com/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Authorization': `Bearer ${REPLIT_TOKEN}`
+        },
+        body: JSON.stringify({
+          query,
+          variables: { replId: app.id }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore caricamento file dalla Repl');
+      }
+
+      const data = await response.json();
+      const files = data.data?.repl?.files?.items || [];
+
+      // Cerca file React comuni
       const possibleFiles = [
         'src/App.tsx',
         'src/App.jsx',
@@ -72,39 +141,19 @@ export function ReplitViewer() {
       ];
 
       let code = '';
-      for (const filePath of possibleFiles) {
-        try {
-          const response = await fetch(
-            `https://api.github.com/repos/${app.full_name}/contents/${filePath}`,
-            {
-              headers: {
-                'Accept': 'application/vnd.github.v3.raw'
-              }
-            }
-          );
-
-          if (response.ok) {
-            const text = await response.text();
-            try {
-              const json = JSON.parse(text);
-              if (json.content) {
-                code = atob(json.content.replace(/\n/g, ''));
-              }
-            } catch {
-              code = text;
-            }
-            console.log(`✅ Trovato: ${filePath}`);
-            break;
-          }
-        } catch (e) {
-          console.log(`❌ File ${filePath} non trovato`);
+      for (const fileName of possibleFiles) {
+        const file = files.find((f: any) => f.path === fileName);
+        if (file && file.content) {
+          code = file.content;
+          console.log(`✅ Trovato: ${fileName}`);
+          break;
         }
       }
 
       if (code) {
         setReactCode(code);
       } else {
-        setReactCode('// Nessun file React trovato in questo repository.');
+        setReactCode('// Nessun file React trovato in questa app Replit.');
       }
     } catch (error) {
       console.error('Errore caricamento codice:', error);
@@ -143,7 +192,7 @@ export function ReplitViewer() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${selectedApp?.name || 'App'}</title>
+  <title>${selectedApp?.title || 'App'}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -186,8 +235,8 @@ export function ReplitViewer() {
           'Prefer': 'return=representation'
         },
         body: JSON.stringify({
-          app_name: selectedApp?.name,
-          repo_url: selectedApp?.html_url,
+          app_name: selectedApp?.title,
+          repo_url: selectedApp?.url,
           html_content: htmlCode,
           created_at: new Date().toISOString()
         })
@@ -242,13 +291,13 @@ export function ReplitViewer() {
                   onClick={() => selectApp(app)}
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-white font-semibold text-lg">{app.name}</h3>
+                    <h3 className="text-white font-semibold text-lg">{app.title}</h3>
                     {app.language && (
                       <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">{app.language}</span>
                     )}
                   </div>
                   <p className="text-gray-400 text-sm mb-3">{app.description || 'Nessuna descrizione'}</p>
-                  <p className="text-xs text-gray-500">{new Date(app.created_at).toLocaleDateString()}</p>
+                  <p className="text-xs text-gray-500">{new Date(app.timeCreated).toLocaleDateString()}</p>
                 </Card>
               ))}
             </div>
@@ -269,7 +318,7 @@ export function ReplitViewer() {
           >
             ← Indietro
           </Button>
-          <h2 className="text-xl text-white font-bold">{selectedApp.name}</h2>
+          <h2 className="text-xl text-white font-bold">{selectedApp.title}</h2>
           <p className="text-sm text-gray-400">{selectedApp.language || 'N/A'}</p>
         </div>
 
@@ -301,7 +350,7 @@ export function ReplitViewer() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `${selectedApp.name}.html`;
+                    a.download = `${selectedApp.title}.html`;
                     a.click();
                   }}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
