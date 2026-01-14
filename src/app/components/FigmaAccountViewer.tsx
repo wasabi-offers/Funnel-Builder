@@ -363,14 +363,21 @@ export function FigmaAccountViewer() {
       setTeams(teamsData);
       setSelectedTeam(manualTeamId.trim());
 
-      // Carica tutti i file dal team
+      // Carica SOLO i file, non i progetti (che sovrascriverebbero i file)
       await loadAllFiles(teamsData, token);
-      await loadProjects(manualTeamId.trim(), token);
 
-      // Aspetta un attimo per dare tempo allo stato di aggiornarsi
-      setTimeout(() => {
-        console.log('File caricati nello stato:', files.length);
-      }, 100);
+      // Carica i progetti separatamente senza sovrascrivere i file
+      const projectsResponse = await fetch(`https://api.figma.com/v1/teams/${manualTeamId.trim()}/projects`, {
+        headers: {
+          'X-Figma-Token': token
+        }
+      });
+      const projectsData = await projectsResponse.json();
+      if (projectsData.projects) {
+        setProjects(projectsData.projects);
+      }
+
+      console.log('Caricamento completato');
     } catch (error) {
       console.error('Errore caricamento team manuale:', error);
       alert('Errore nel caricamento del team. Verifica il Team ID.');
