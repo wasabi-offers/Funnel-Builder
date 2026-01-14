@@ -209,6 +209,7 @@ export function FigmaAccountViewer() {
       const data = await response.json();
 
       console.log('User info:', data);
+      console.log('User info JSON:', JSON.stringify(data, null, 2));
 
       const teamsData: FigmaTeam[] = [];
 
