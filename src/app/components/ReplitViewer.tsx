@@ -33,6 +33,7 @@ export function ReplitViewer() {
 
   async function loadReplitApps() {
     setLoading(true);
+    console.log('🔄 Chiamata Edge Function Supabase:', PROXY_URL);
     try {
       // GraphQL query per ottenere i repl dell'utente
       const query = `
